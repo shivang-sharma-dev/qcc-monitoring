@@ -1,0 +1,250 @@
+name: drone-dfr-backend
+
+x-custom-env-vars:
+  shared_env: &shared_env
+    POSTGRES_DB: dmdfrdb
+    SPRING_PROFILES_ACTIVE: uat
+    SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+    SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+    KEYCLOAK_DOMAIN: ${KEYCLOAK_DOMAIN}
+    KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+    KEYCLOAK_USERNAME: ${KEYCLOAK_USERNAME}
+    KEYCLOAK_PASSWORD: ${KEYCLOAK_PASSWORD}
+    APP_DOMAIN_NAME: ${APP_DOMAIN_NAME}
+    SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
+    SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
+    DFR_LOGGING_DEMO: ${DFR_LOGGING_DEMO}
+    PGADMIN_USER: ${PGADMIN_USER}
+    PGADMIN_PASS: ${PGADMIN_PASS}
+    INFLUX_DB_TOKEN: ${INFLUX_DB_TOKEN}
+    INFLUX_USERNAME: ${INFLUX_USERNAME}
+    INFLUX_PASSWORD: ${INFLUX_PASSWORD}
+    INFLUX_ORG: ${INFLUX_ORG:-zyter}
+    INFLUX_BUCKET: ${INFLUX_BUCKET:-drone-dfr}
+    ANTMEDIA_USER: ${ANTMEDIA_USER}
+    ANTMEDIA_PASS: ${ANTMEDIA_PASS}
+    ANTMEDIA_BASE_URL: ${ANTMEDIA_BASE_URL}
+    ANTMEDIA_APPLICATION: ${ANTMEDIA_APPLICATION}
+    ANTMEDIA_API_TOKEN: ${ANTMEDIA_API_TOKEN}
+    KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID}
+    KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+    KEYCLOAK_DFR_CLIENT_ID: ${KEYCLOAK_DFR_CLIENT_ID}
+    FLIGHTOPS_USERNAME: ${FLIGHTOPS_USERNAME}
+    FLIGHTOPS_PASSWORD: ${FLIGHTOPS_PASSWORD}
+    FLIGHTOPS_DOMAIN: ${FLIGHTOPS_DOMAIN}
+
+
+services:
+  # ------------------ PostgreSQL (single instance, two DBs) -------------------
+  db:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    command: >
+      postgres -c shared_preload_libraries=pg_stat_statements
+               -c pg_stat_statements.track=all
+               -c 'max_connections=300'
+    environment:
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      POSTGRES_DB: postgres
+      # used by our init script (see volume below)
+      POSTGRES_MULTIPLE_DATABASES: "dmdfrdb,keycloak"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro # this needs to be run only one time
+    networks:
+      - drone-net
+    ports:
+      - "5432:5432"
+
+  # ------------------------------- pgAdmin ------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_USER}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+    expose:
+      - "80"
+    networks:
+      - drone-net
+
+  # ------------------------------- InfluxDB -----------------------------------
+  influxdb:
+    image: influxdb:2.1
+    container_name: influxdb
+    restart: unless-stopped
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    ports:
+      - 8086:8086
+    networks:
+      - drone-net
+
+  influxdb_cli:
+    image: influxdb:2.1
+    container_name: influx_cli
+    restart: "no"
+    entrypoint: >
+      sh -c "
+      sleep 15 &&
+      influx setup
+      --bucket \"$INFLUX_BUCKET\"
+      --org \"$INFLUX_ORG\"
+      --username \"$INFLUX_USERNAME\"
+      --password \"$INFLUX_PASSWORD\"
+      --token \"$INFLUX_DB_TOKEN\"
+      --host http://influxdb:8086
+      -f
+      "
+    depends_on:
+      - influxdb
+    networks:
+      - drone-net
+  # -------------------------------- Keycloak ----------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:18.0.2
+    container_name: keycloak
+    restart: always
+    command: ["start","--auto-build", "--hostname-strict=false", "--proxy=edge", "--http-enabled=true"]
+    # don't publish 8080 to host; it's behind nginx
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      KC_DB_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD}
+      KC_HOSTNAME: ${KEYCLOAK_DOMAIN}
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    depends_on:
+      - db
+    networks:
+      - drone-net
+
+  # --------------------------------- APIs -------------------------------------
+  dfr-api:
+    image: ghcr.io/grok-digital/drone-api:master
+    container_name: dfr-api-server
+    restart: always
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *shared_env
+    #extra_hosts:
+    #  - "qc-drone-solutions.com:host-gateway"
+    depends_on:
+      - db
+      - vms-api
+    networks:
+      - drone-net
+
+  vms-api:
+    image: ghcr.io/grok-digital/drone-vms-api:master
+    container_name: vms-api-server
+    restart: always
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      <<: *shared_env
+    ports:
+      - "9083:9083"
+    #extra_hosts:
+    #  - "qc-drone-solutions.com:host-gateway"
+    depends_on:
+      - db
+      - keycloak
+    networks:
+      - drone-net
+
+  # --------------------------------- UI ---------------------------------------
+  # dfr-ui:
+  #   image: ghcr.io/grok-digital/drone-dfr-ui:master
+  #   container_name: dfr-ui
+  #   restart: always
+  #   labels:
+  #     - "com.centurylinklabs.watchtower.enable=true"
+  #   #extra_hosts:
+  #   # - "qc-drone-solutions.com:host-gateway"
+  #   environment:
+  #     <<: *shared_env
+  #   ports:
+  #     - "3000:80"
+  #   networks:
+  #     - drone-net
+  #   depends_on:
+  #     - dfr-api
+  #     - vms-api
+
+  # ------------------------------ Ant Media -----------------------------------
+  antmedia:
+    image: antmedia/enterprise:2.17.1
+    container_name: antmedia
+    restart: always
+    environment:
+      ANT_MEDIA_SERVER_USER: ${ANTMEDIA_USER:-admin}
+      ANT_MEDIA_SERVER_PASS: ${ANTMEDIA_PASS:-admin123}
+    volumes:
+      - antmedia_data:/usr/local/antmedia
+    # Keep these if you also want direct access besides nginx
+    ports:
+      - "5080:5080"
+      - "1935:1935"
+      - "5443:5443"
+    networks:
+      - drone-net
+
+  # ------------------------------- NGINX --------------------------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx
+    restart: always
+    volumes:
+      - ./ssl:/etc/ssl/certs:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9101:9101" # enable HTTPS
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      # - dfr-ui
+      - dfr-api
+      - vms-api
+      - pgadmin
+      - keycloak
+      - antmedia
+    networks:
+      - drone-net
+
+
+volumes:
+  db_data:
+    external: true
+    name: db_data
+  pgadmin_data:
+    external: true
+    name: pgadmin_data
+  influxdb_data:
+    external: true
+    name: influxdb_data
+  antmedia_data:
+    external: true
+    name: antmedia_data
+
+networks:
+  drone-net:
+    external: true
