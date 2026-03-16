@@ -1,0 +1,764 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Host Metric Alerts
+    folder: Host Alerts
+    interval: 1m
+    rules:
+      # ── CPU Usage ─────────────────────────────────────────────
+      - uid: cpu-usage-warning
+        title: "CPU Usage Warning (>70%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [70]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: cpu
+        annotations:
+          summary: "CPU usage is above 70%"
+          description: "CPU usage has been above 70% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      - uid: cpu-usage-critical
+        title: "CPU Usage Critical (>80%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [80]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: cpu
+        annotations:
+          summary: "CPU usage is above 80%"
+          description: "CPU usage has been above 80% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      # ── Memory Usage ──────────────────────────────────────────
+      - uid: memory-usage-warning
+        title: "Memory Usage Warning (>65%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [65]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: memory
+        annotations:
+          summary: "Memory usage is above 65%"
+          description: "Memory usage has been above 65% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      - uid: memory-usage-critical
+        title: "Memory Usage Critical (>80%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [80]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: memory
+        annotations:
+          summary: "Memory usage is above 80%"
+          description: "Memory usage has been above 80% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      # ── Disk Usage ────────────────────────────────────────────
+      - uid: disk-usage-warning
+        title: "Disk Usage Warning (>65%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * (1 - (node_filesystem_free_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [65]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "Disk usage is above 65%"
+          description: "Root filesystem usage has been above 65% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      - uid: disk-usage-critical
+        title: "Disk Usage Critical (>80%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * (1 - (node_filesystem_free_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [80]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: disk
+        annotations:
+          summary: "Disk usage is above 80%"
+          description: "Root filesystem usage has been above 80% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      # ── Network Errors ────────────────────────────────────────
+      - uid: network-errors
+        title: "Network Errors Detected"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(node_network_receive_errs_total[5m])) + sum(rate(node_network_transmit_errs_total[5m]))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "Network errors detected"
+          description: "Network receive/transmit errors detected for more than 5 minutes. Current error rate: {{ $values.B }}/s"
+
+      # ── Container Restarts ────────────────────────────────────
+      - uid: container-restarts-warning
+        title: "Container Restarts Warning (>=1 in 1h)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(changes(container_start_time_seconds{name!=""}[1h]))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        for: 0s
+        labels:
+          severity: warning
+          category: containers
+        annotations:
+          summary: "Container restarts detected"
+          description: "{{ $values.B }} container restart(s) detected in the last hour"
+
+      - uid: container-restarts-critical
+        title: "Container Restarts Critical (>=3 in 1h)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(changes(container_start_time_seconds{name!=""}[1h]))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        for: 0s
+        labels:
+          severity: critical
+          category: containers
+        annotations:
+          summary: "Multiple container restarts detected"
+          description: "{{ $values.B }} container restarts detected in the last hour (threshold: 3)"
+
+      # ── IO Wait ───────────────────────────────────────────────
+      - uid: io-wait-warning
+        title: "IO Wait Warning (>5%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: avg(rate(node_cpu_seconds_total{mode="iowait"}[2m])) * 100
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "IO wait is above 5%"
+          description: "CPU IO wait has been above 5% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      - uid: io-wait-critical
+        title: "IO Wait Critical (>10%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: avg(rate(node_cpu_seconds_total{mode="iowait"}[2m])) * 100
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: disk
+        annotations:
+          summary: "IO wait is above 10%"
+          description: "CPU IO wait has been above 10% for more than 5 minutes. Current value: {{ $values.B }}%"
+
+      # ── Disk Busy ─────────────────────────────────────────────
+      - uid: disk-busy-warning
+        title: "Disk Busy Warning (>70%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * avg(rate(node_disk_io_time_seconds_total[1m]))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [70]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "Disk busy time is above 70%"
+          description: "Disk has been busy more than 70% of the time for over 5 minutes. Current value: {{ $values.B }}%"
+
+      - uid: disk-busy-critical
+        title: "Disk Busy Critical (>85%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 * avg(rate(node_disk_io_time_seconds_total[1m]))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [85]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: disk
+        annotations:
+          summary: "Disk busy time is above 85%"
+          description: "Disk has been busy more than 85% of the time for over 5 minutes. Current value: {{ $values.B }}%"
+
+      # ── Disk Pressure (Latency) ──────────────────────────────
+      - uid: disk-pressure-warning
+        title: "Disk Pressure Warning (latency >30ms)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: avg(rate(node_disk_io_time_weighted_seconds_total[1m])) * 1000
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "Disk IO latency is elevated"
+          description: "Average disk IO latency has been above 30ms for more than 5 minutes. Current value: {{ $values.B }}ms"
+
+      - uid: disk-pressure-critical
+        title: "Disk Pressure Critical (latency >50ms)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: avg(rate(node_disk_io_time_weighted_seconds_total[1m])) * 1000
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [50]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: disk
+        annotations:
+          summary: "Disk IO latency is critically high"
+          description: "Average disk IO latency has been above 50ms for more than 5 minutes. Current value: {{ $values.B }}ms"
+
+      # ── System Load ──────────────────────────────────────────
+      - uid: system-load-warning
+        title: "System Load High (5m avg > 4)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: node_load5
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [4]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          category: cpu
+        annotations:
+          summary: "System load average (5m) is high"
+          description: "System 5-minute load average has been above 4 for more than 5 minutes. Current value: {{ $values.B }}"
+
+      - uid: system-load-critical
+        title: "System Load Critical (5m avg > 8)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: node_load5
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [8]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          category: cpu
+        annotations:
+          summary: "System load average (5m) is critically high"
+          description: "System 5-minute load average has been above 8 for more than 5 minutes. Current value: {{ $values.B }}"
