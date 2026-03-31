@@ -1,0 +1,468 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.6; }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #34495e; margin-top: 30px; border-bottom: 2px solid #95a5a6; padding-bottom: 8px; }
+        h3 { color: #7f8c8d; margin-top: 20px; }
+        h4 { color: #95a5a6; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #bdc3c7; padding: 12px; text-align: left; }
+        th { background-color: #3498db; color: white; }
+        tr:nth-child(even) { background-color: #ecf0f1; }
+        code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }
+        pre { background-color: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        ul, ol { margin-left: 20px; }
+        strong { color: #2980b9; }
+        hr { border: none; border-top: 2px solid #bdc3c7; margin: 30px 0; }
+    </style>
+</head>
+<body>
+<h1>QCC Monitoring - Docker Services Overview</h1>
+<br>
+<p>This repository contains the complete Docker infrastructure for the QCC (Quantum Command Center) Drone Management System. The setup is split into two main stacks: the <strong>core application stack</strong> and the <strong>monitoring stack</strong>. Both stacks share the same Docker network (<code>drone-net</code>) which allows seamless communication between services.</p>
+<br>
+<hr>
+<br>
+<h2>Table of Contents</h2>
+<li>[Quick Reference](#quick-reference)</li>
+<li>[Core Application Stack](#core-application-stack)</li>
+<li>[Monitoring Stack](#monitoring-stack)</li>
+<li>[Network Architecture](#network-architecture)</li>
+<li>[Getting Started](#getting-started)</li>
+<br>
+<hr>
+<br>
+<h2>Quick Reference</h2>
+<br>
+<h3>Application Stack (`docker-compose.yaml`)</h3>
+<table>
+<tr><th>Service</th><th>Local Port</th><th>Container Port</th><th>Purpose</th></tr>
+<tr><td>PostgreSQL</td><td>5432</td><td>5432</td><td>Primary database</td></tr>
+<tr><td>pgAdmin</td><td>-</td><td>80 (internal)</td><td>Database management UI</td></tr>
+<tr><td>InfluxDB</td><td>8086</td><td>8086</td><td>Time-series database for telemetry</td></tr>
+<tr><td>Keycloak</td><td>-</td><td>8080 (internal)</td><td>Authentication & identity management</td></tr>
+<tr><td>DFR API</td><td>8080</td><td>8080</td><td>Drone Flight Record backend API</td></tr>
+<tr><td>VMS API</td><td>9083</td><td>9083</td><td>Vehicle Management System API</td></tr>
+<tr><td>Ant Media</td><td>5080, 1935, 5443</td><td>5080, 1935, 5443</td><td>Video streaming server</td></tr>
+<tr><td>NGINX</td><td>80, 443, 9101</td><td>80, 443, 9101</td><td>Reverse proxy & SSL termination</td></tr>
+</table>
+<br>
+<h3>Monitoring Stack (`docker-compose.yml`)</h3>
+<table>
+<tr><th>Service</th><th>Local Port</th><th>Container Port</th><th>Purpose</th></tr>
+<tr><td>Prometheus</td><td>9090</td><td>9090</td><td>Metrics collection & storage</td></tr>
+<tr><td>Grafana</td><td>3001</td><td>3000</td><td>Metrics visualization dashboards</td></tr>
+<tr><td>Node Exporter</td><td>9100</td><td>9100</td><td>Host system metrics</td></tr>
+<tr><td>Smartctl Exporter</td><td>-</td><td>9633 (internal)</td><td>Disk health metrics</td></tr>
+<tr><td>NGINX Exporter</td><td>9113</td><td>9113</td><td>NGINX performance metrics</td></tr>
+<tr><td>cAdvisor</td><td>7070</td><td>8080</td><td>Container resource metrics</td></tr>
+<tr><td>Promtail</td><td>-</td><td>(internal)</td><td>Log collection agent</td></tr>
+<tr><td>Loki</td><td>3100</td><td>3100</td><td>Log aggregation & storage</td></tr>
+</table>
+<br>
+<hr>
+<br>
+<h2>Core Application Stack</h2>
+<br>
+<p>The application stack runs the main drone management platform. Everything here supports the core business logic - from user authentication to video streaming to database management.</p>
+<br>
+<h3>Database Layer</h3>
+<br>
+<h4>PostgreSQL (db)</h4>
+<p><strong>Image:</strong> <code>postgres:16-alpine</code>  </p>
+<p><strong>Container:</strong> <code>postgres</code>  </p>
+<p><strong>Ports:</strong> <code>5432:5432</code></p>
+<br>
+<p>PostgreSQL is the backbone of our data storage. We're running a single Postgres instance that hosts multiple databases:</p>
+<li><strong>dmdfrdb</strong> - The main Drone Management & Flight Record database</li>
+<li><strong>keycloak</strong> - Stores all user authentication and authorization data</li>
+<br>
+<p>The instance is configured with <code>pg_stat_statements</code> enabled, which helps us track query performance and optimize slow queries. We've also bumped the max connections to 300 to handle concurrent requests from multiple services.</p>
+<br>
+<p>The initialization scripts in <code>./db/init</code> run automatically on first startup to create the required databases.</p>
+<br>
+<h4>pgAdmin (pgadmin)</h4>
+<p><strong>Image:</strong> <code>dpage/pgadmin4:latest</code>  </p>
+<p><strong>Container:</strong> <code>pgadmin</code>  </p>
+<p><strong>Ports:</strong> Internal only (80), exposed through NGINX</p>
+<br>
+<p>This gives us a web-based interface to manage PostgreSQL. It's particularly useful when debugging database issues or running manual queries. The service is only accessible internally - NGINX handles the external routing with proper authentication.</p>
+<br>
+<h4>InfluxDB (influxdb)</h4>
+<p><strong>Image:</strong> <code>influxdb:2.1</code>  </p>
+<p><strong>Container:</strong> <code>influxdb</code>  </p>
+<p><strong>Ports:</strong> <code>8086:8086</code></p>
+<br>
+<p>InfluxDB stores time-series data from our drones - think telemetry, GPS coordinates, altitude changes, battery levels over time, etc. It's optimized for write-heavy workloads where data comes in at high frequency.</p>
+<br>
+<p>The companion <code>influxdb_cli</code> container runs once during initial setup to configure the bucket, organization, and authentication tokens. After that, it exits - it's not a long-running service.</p>
+<br>
+<h3>Authentication & Identity</h3>
+<br>
+<h4>Keycloak (keycloak)</h4>
+<p><strong>Image:</strong> <code>quay.io/keycloak/keycloak:18.0.2</code>  </p>
+<p><strong>Container:</strong> <code>keycloak</code>  </p>
+<p><strong>Ports:</strong> Internal only (8080), exposed through NGINX</p>
+<br>
+<p>Keycloak handles all authentication and authorization for the platform. It manages:</p>
+<li>User login and session management</li>
+<li>OAuth2/OIDC token generation</li>
+<li>Role-based access control (RBAC)</li>
+<li>Multi-factor authentication (if configured)</li>
+<br>
+<p>It runs in "edge" proxy mode since it sits behind NGINX, which handles SSL termination. The service connects to the <code>keycloak</code> database in PostgreSQL for persistence.</p>
+<br>
+<h3>Application APIs</h3>
+<br>
+<h4>DFR API (dfr-api)</h4>
+<p><strong>Image:</strong> <code>ghcr.io/grok-digital/drone-api:master</code>  </p>
+<p><strong>Container:</strong> <code>dfr-api-server</code>  </p>
+<p><strong>Ports:</strong> <code>8080:8080</code></p>
+<br>
+<p>The Drone Flight Record API is the primary backend service. It handles:</p>
+<li>Flight planning and mission management</li>
+<li>Drone registration and configuration</li>
+<li>Flight record storage and retrieval</li>
+<li>Integration with external flight operations systems</li>
+<li>Email notifications for flight events</li>
+<br>
+<p>This is a Spring Boot application that communicates with PostgreSQL for relational data and InfluxDB for telemetry streams.</p>
+<br>
+<h4>VMS API (vms-api)</h4>
+<p><strong>Image:</strong> <code>ghcr.io/grok-digital/drone-vms-api:master</code>  </p>
+<p><strong>Container:</strong> <code>vms-api-server</code>  </p>
+<p><strong>Ports:</strong> <code>9083:9083</code></p>
+<br>
+<p>The Vehicle Management System API focuses on the drone fleet itself:</p>
+<li>Drone inventory and asset tracking</li>
+<li>Maintenance schedules and records</li>
+<li>Vehicle health monitoring</li>
+<li>Battery and component lifecycle management</li>
+<br>
+<p>Both APIs are labeled with Watchtower labels, meaning they'll auto-update when new versions are pushed to the container registry.</p>
+<br>
+<h3>Media Streaming</h3>
+<br>
+<h4>Ant Media Server (antmedia)</h4>
+<p><strong>Image:</strong> <code>antmedia/enterprise:2.17.1</code>  </p>
+<p><strong>Container:</strong> <code>antmedia</code>  </p>
+<p><strong>Ports:</strong> </p>
+<li><code>5080:5080</code> - HTTP/WebSocket</li>
+<li><code>1935:1935</code> - RTMP streaming</li>
+<li><code>5443:5443</code> - HTTPS/WebSocket</li>
+<br>
+<p>Ant Media handles real-time video streaming from drones. During flights, video feeds are streamed via RTMP and made available through WebRTC for low-latency viewing in the web interface.</p>
+<br>
+<p>The enterprise edition provides clustering capabilities and advanced features like adaptive bitrate streaming. Videos can also be recorded and stored for later review.</p>
+<br>
+<h3>Reverse Proxy</h3>
+<br>
+<h4>NGINX (nginx)</h4>
+<p><strong>Image:</strong> <code>nginx:1.25-alpine</code>  </p>
+<p><strong>Container:</strong> <code>nginx</code>  </p>
+<p><strong>Ports:</strong> </p>
+<li><code>80:80</code> - HTTP</li>
+<li><code>443:443</code> - HTTPS</li>
+<li><code>9101:9101</code> - Metrics endpoint for monitoring</li>
+<br>
+<p>NGINX sits at the edge of the stack and routes all incoming traffic. It handles:</p>
+<li>SSL/TLS termination (certificates in <code>./ssl</code>)</li>
+<li>Reverse proxying to backend services</li>
+<li>Load balancing (when multiple instances run)</li>
+<li>Static file serving</li>
+<li>WebSocket proxying for real-time features</li>
+<br>
+<p>The configuration (<code>nginx.conf</code>) defines routing rules for each service. The metrics endpoint on port 9101 exposes NGINX stats for Prometheus scraping.</p>
+<br>
+<hr>
+<br>
+<h2>Monitoring Stack</h2>
+<br>
+<p>The monitoring stack gives us visibility into how everything is performing - from infrastructure health to application metrics to logs.</p>
+<br>
+<h3>Metrics Collection</h3>
+<br>
+<h4>Prometheus (prometheus)</h4>
+<p><strong>Image:</strong> <code>prom/prometheus:v3</code>  </p>
+<p><strong>Container:</strong> <code>prometheus</code>  </p>
+<p><strong>Ports:</strong> <code>9090:9090</code></p>
+<br>
+<p>Prometheus is the central metrics database. It scrapes metrics from all the exporters and stores them in a time-series format. Every 15 seconds (configurable), it pulls data from:</p>
+<li>Node Exporter (system metrics)</li>
+<li>cAdvisor (container metrics)</li>
+<li>NGINX Exporter (web server metrics)</li>
+<li>Smartctl Exporter (disk health)</li>
+<li>Application endpoints (if they expose /metrics)</li>
+<br>
+<p>The web UI at port 9090 lets you run PromQL queries and explore metrics directly, though most visualization happens through Grafana.</p>
+<br>
+<h4>Grafana (grafana)</h4>
+<p><strong>Image:</strong> <code>grafana/grafana:12.3</code>  </p>
+<p><strong>Container:</strong> <code>grafana</code>  </p>
+<p><strong>Ports:</strong> <code>3001:3000</code></p>
+<br>
+<p>Grafana is where all the monitoring data comes together visually. The dashboards (from the various JSON files in the repo) display:</p>
+<li>Container health and resource usage</li>
+<li>API response times and error rates</li>
+<li>Database performance</li>
+<li>Host system vitals (CPU, memory, disk, network)</li>
+<li>Application-specific metrics</li>
+<li>Logs from Loki</li>
+<br>
+<p>The provisioning folder contains pre-configured data sources (Prometheus, Loki) so everything works out of the box. Access Grafana at <code>http://localhost:3001</code> (default credentials are in the environment variables).</p>
+<br>
+<h3>System Exporters</h3>
+<br>
+<h4>Node Exporter (node-exporter)</h4>
+<p><strong>Image:</strong> <code>prom/node-exporter:latest</code>  </p>
+<p><strong>Container:</strong> <code>node-exporter</code>  </p>
+<p><strong>Ports:</strong> <code>9100:9100</code></p>
+<br>
+<p>This exposes hardware and OS metrics from the host machine:</p>
+<li>CPU usage per core</li>
+<li>Memory utilization (used, free, cached)</li>
+<li>Disk I/O statistics</li>
+<li>Network interface stats</li>
+<li>Filesystem usage</li>
+<li>System load averages</li>
+<br>
+<p>The entire host filesystem is mounted read-only at <code>/host</code> so the exporter can gather accurate metrics even though it's running in a container.</p>
+<br>
+<h4>Smartctl Exporter (smartctl-exporter)</h4>
+<p><strong>Image:</strong> <code>prometheuscommunity/smartctl-exporter</code>  </p>
+<p><strong>Container:</strong> <code>smartctl-exporter</code>  </p>
+<p><strong>Ports:</strong> Internal (9633)</p>
+<br>
+<p>Runs with privileged access to read S.M.A.R.T. data from physical disks. This helps predict disk failures before they happen by tracking:</p>
+<li>Reallocated sectors</li>
+<li>Spin retry counts</li>
+<li>Temperature</li>
+<li>Power-on hours</li>
+<li>Pending sector counts</li>
+<br>
+<p>Critical for preventing data loss on systems with traditional hard drives.</p>
+<br>
+<h4>NGINX Prometheus Exporter (nginx-prometheus-exporter)</h4>
+<p><strong>Image:</strong> <code>nginx/nginx-prometheus-exporter:1.5.1</code>  </p>
+<p><strong>Container:</strong> <code>prometheus-nginx-exporter</code>  </p>
+<p><strong>Ports:</strong> <code>9113:9113</code></p>
+<br>
+<p>Scrapes the NGINX stub status endpoint and converts it to Prometheus metrics. Tracks:</p>
+<li>Active connections</li>
+<li>Total requests handled</li>
+<li>Reading/writing/waiting states</li>
+<li>Request rate</li>
+<br>
+<p>Helps identify if NGINX becomes a bottleneck or if we're getting unusual traffic patterns.</p>
+<br>
+<h4>cAdvisor (cadvisor)</h4>
+<p><strong>Image:</strong> <code>gcr.io/cadvisor/cadvisor:latest</code>  </p>
+<p><strong>Container:</strong> <code>cadvisor</code>  </p>
+<p><strong>Ports:</strong> <code>7070:8080</code></p>
+<br>
+<p>Container Advisor monitors resource usage of all running Docker containers:</p>
+<li>CPU usage per container</li>
+<li>Memory consumption and limits</li>
+<li>Network I/O per container</li>
+<li>Filesystem I/O</li>
+<li>Container restart counts</li>
+<br>
+<p>This is especially valuable for identifying which services are resource hogs or experiencing memory leaks. The UI at port 7070 provides a quick visual overview.</p>
+<br>
+<h3>Log Management</h3>
+<br>
+<h4>Loki (loki)</h4>
+<p><strong>Image:</strong> <code>grafana/loki:3.0.0</code>  </p>
+<p><strong>Container:</strong> <code>loki</code>  </p>
+<p><strong>Ports:</strong> <code>3100:3100</code></p>
+<br>
+<p>Loki is like Prometheus but for logs. Instead of storing full-text logs like Elasticsearch, it only indexes metadata (labels) and stores the log lines separately. This makes it much more cost-effective while still allowing powerful queries.</p>
+<br>
+<p>Logs are organized by:</p>
+<li>Container name</li>
+<li>Service name</li>
+<li>Log level (if structured)</li>
+<li>Custom labels from Promtail</li>
+<br>
+<p>You can search logs in Grafana using LogQL, which feels similar to PromQL.</p>
+<br>
+<h4>Promtail (promtail)</h4>
+<p><strong>Image:</strong> <code>grafana/promtail:latest</code>  </p>
+<p><strong>Container:</strong> <code>promtail</code>  </p>
+<p><strong>Ports:</strong> Internal only</p>
+<br>
+<p>Promtail is the log collection agent. It:</p>
+<li>Tails log files from <code>/var/log</code></li>
+<li>Reads Docker container logs from <code>/var/lib/docker/containers</code></li>
+<li>Parses and labels log entries</li>
+<li>Ships everything to Loki</li>
+<br>
+<p>The configuration (<code>promtail-config.yml</code>) defines which logs to collect and how to label them. It automatically discovers new containers and starts tailing their logs.</p>
+<br>
+<hr>
+<br>
+<h2>Network Architecture</h2>
+<br>
+<p>Both Docker Compose files reference an <strong>external network</strong> called <code>drone-net</code>. This needs to be created before starting any services:</p>
+<br>
+<pre><code>docker network create drone-net
+</pre>
+<br>
+<p>Using a shared external network allows containers from different Compose files to communicate. For example:</p>
+<li>Prometheus can scrape metrics from the NGINX container</li>
+<li>Grafana can query both Prometheus and Loki</li>
+<li>Monitoring exporters can connect to application services</li>
+<br>
+<p>All inter-service communication happens over this private network. Only the explicitly mapped ports are exposed to the host machine or the internet.</p>
+<br>
+<h3>Internet vs. Local Access</h3>
+<br>
+<p><strong>Publicly Accessible (through NGINX):</strong></p>
+<li>Main application UI and APIs (via ports 80/443)</li>
+<li>Keycloak login pages</li>
+<li>pgAdmin (if configured in NGINX)</li>
+<br>
+<p><strong>Local Machine Only:</strong></p>
+<li>PostgreSQL (5432) - direct database access for development</li>
+<li>InfluxDB (8086) - direct API access</li>
+<li>APIs (8080, 9083) - can be accessed directly, bypassing NGINX</li>
+<li>Prometheus (9090) - metrics UI</li>
+<li>Grafana (3001) - dashboard UI</li>
+<li>All exporters - metrics endpoints</li>
+<br>
+<p><strong>Internal Only (container-to-container):</strong></p>
+<li>pgAdmin default port (proxied through NGINX)</li>
+<li>Keycloak (proxied through NGINX)</li>
+<li>Promtail</li>
+<li>Smartctl Exporter</li>
+<br>
+<p>In production, you'd typically firewall off all the "Local Machine Only" ports and only allow traffic through NGINX.</p>
+<br>
+<hr>
+<br>
+<h2>Getting Started</h2>
+<br>
+<h3>Prerequisites</h3>
+<br>
+<p>Create the required Docker volumes and network:</p>
+<br>
+<pre><code># Create the network
+docker network create drone-net
+
+# Create the volumes
+docker volume create db_data
+docker volume create pgadmin_data
+docker volume create influxdb_data
+docker volume create antmedia_data
+docker volume create prometheus_data
+docker volume create grafana_data
+docker volume create loki_data
+</pre>
+<br>
+<h3>Environment Configuration</h3>
+<br>
+<p>Copy the example environment file and fill in your values:</p>
+<br>
+<pre><code>cp .env.example .env
+</pre>
+<br>
+<p>Make sure to set all required variables like database passwords, Keycloak credentials, email settings, etc.</p>
+<br>
+<h3>Starting the Stacks</h3>
+<br>
+<p>Start the application stack first:</p>
+<br>
+<pre><code>docker-compose -f docker-compose.yaml up -d
+</pre>
+<br>
+<p>Wait for all services to be healthy, then start the monitoring stack:</p>
+<br>
+<pre><code>docker-compose -f docker-compose.yml up -d
+</pre>
+<br>
+<h3>Accessing Services</h3>
+<br>
+<li><strong>Application:</strong> https://your-domain.com (via NGINX)</li>
+<li><strong>Grafana:</strong> http://localhost:3001</li>
+<li><strong>Prometheus:</strong> http://localhost:9090</li>
+<li><strong>InfluxDB:</strong> http://localhost:8086</li>
+<li><strong>PostgreSQL:</strong> localhost:5432</li>
+<br>
+<h3>Verifying Everything Works</h3>
+<br>
+<p>Check that all containers are running:</p>
+<br>
+<pre><code>docker ps
+</pre>
+<br>
+<p>Check logs if something isn't starting:</p>
+<br>
+<pre><code>docker logs <container-name>
+</pre>
+<br>
+<p>Test connectivity between stacks:</p>
+<br>
+<pre><code># From inside the Prometheus container
+docker exec prometheus wget -qO- http://nginx:9101/metrics
+</pre>
+<br>
+<hr>
+<br>
+<h2>Maintenance Notes</h2>
+<br>
+<h3>Updates</h3>
+<br>
+<p>The DFR API and VMS API containers are configured with Watchtower labels. If you're running Watchtower separately, these will auto-update when new images are pushed to the registry.</p>
+<br>
+<h3>Backups</h3>
+<br>
+<p>Critical data is stored in Docker volumes. Regular backups should cover:</p>
+<li><code>db_data</code> - PostgreSQL databases</li>
+<li><code>influxdb_data</code> - Time-series telemetry</li>
+<li><code>grafana_data</code> - Dashboard configurations (unless using provisioning)</li>
+<br>
+<h3>Scaling</h3>
+<br>
+<p>To scale horizontally:</p>
+<li>Run multiple instances of the API containers</li>
+<li>Configure NGINX for load balancing</li>
+<li>Ensure database connection pools are sized appropriately</li>
+<br>
+<h3>Troubleshooting</h3>
+<br>
+<p><strong>Service won't start:</strong></p>
+<li>Check logs: <code>docker logs <container></code></li>
+<li>Verify environment variables are set</li>
+<li>Ensure dependent services are running</li>
+<li>Check volume permissions</li>
+<br>
+<p><strong>Can't connect between services:</strong></p>
+<li>Verify both containers are on <code>drone-net</code></li>
+<li>Check firewall rules</li>
+<li>Use container names (not localhost) for inter-container communication</li>
+<br>
+<p><strong>High resource usage:</strong></p>
+<li>Check cAdvisor at http://localhost:7070</li>
+<li>Review Grafana dashboards for anomalies</li>
+<li>Look for memory leaks in application logs</li>
+<br>
+<hr>
+<br>
+<h2>Additional Resources</h2>
+<br>
+<li><strong>Dashboards:</strong> Pre-configured Grafana dashboards are in the <code>grafana-*-dashboard.json</code> files</li>
+<li><strong>Documentation:</strong> <code>QCC_Docker_Services_Documentation.docx</code> contains additional operational details</li>
+<li><strong>Diagrams:</strong> <code>monitoring-stack-diagram.png</code> shows the architecture visually</li>
+<li><strong>Email Integration:</strong> <code>azure-grafana-email-integration.docx</code> explains alert notifications</li>
+<br>
+<hr>
+<br>
+<p>*This infrastructure supports the QCC drone management platform, providing a complete stack for flight operations, video streaming, authentication, and comprehensive monitoring.*</p>
+<br>
+
+</body>
+</html>
